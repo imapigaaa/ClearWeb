@@ -30,6 +30,7 @@ import android.widget.Toast;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 单页 WebView 壳。
@@ -211,10 +212,18 @@ public class MainActivity extends Activity {
 
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-            if (AdBlocker.isAdHost(request.getUrl().getHost())) {
+            Uri url = request.getUrl();
+            if (AdBlocker.isAdHost(url.getHost())) {
                 // 返回空响应，广告脚本/图片一个字节都不下载
                 return new WebResourceResponse("text/plain", "utf-8",
                         new ByteArrayInputStream(new byte[0]));
+            }
+            if (AdBlocker.isSiteHost(url.getHost()) && AdBlocker.isAdPath(url.getPath())) {
+                // 播放器预播广告接口：回一个"没有广告可投"的合法 JSON。
+                // 必须返回 200 + 合法 JSON，而不是 404 —— 否则播放器可能一直等这个请求，卡住不出片。
+                return new WebResourceResponse("application/json", "utf-8",
+                        new ByteArrayInputStream(
+                                "{\"campaigns\":[]}".getBytes(StandardCharsets.UTF_8)));
             }
             return null;
         }

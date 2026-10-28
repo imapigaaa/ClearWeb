@@ -92,7 +92,7 @@ gradle.properties
 3. **只能在线看，不带下载功能**。要下载建议用 Seal（yt-dlp 的安卓 GUI）。
 4. **不拦截登录**。账号登录照常可用，Cookie 存在 WebView 里。
 5. **站点改版后选择器可能失效**。这种情况广告会重新出现，但页面功能不受影响 —— 改 `PageCleaner.java` 里的选择器重新编译即可。
-6. 构建产物用 workflow 里临时生成的密钥签名。每次全新构建密钥都不同，所以**后续版本覆盖安装会签名冲突**，需要先卸载旧版。想固定签名就在仓库 Secrets 里配自己的 keystore 并改 workflow。
+6. 签名密钥存在仓库 Secrets（`KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`），所以后续版本可以直接覆盖升级。**但 v1.0 → v1.1 这一次仍需先卸载旧版**，因为 v1.0 用的是临时密钥。
 
 ---
 

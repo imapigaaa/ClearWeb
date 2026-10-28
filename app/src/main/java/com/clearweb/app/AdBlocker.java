@@ -45,6 +45,22 @@ final class AdBlocker {
         return matches(host, AD_HOSTS);
     }
 
+    /**
+     * 同域名下的广告接口路径。播放器的预播/插播广告不走第三方域名，
+     * 而是本站的 {@code /_xa/ads?...&preroll_type=json}，返回 JSON 里的 campaigns 就是广告素材，
+     * 按域名拦截根本拦不到，必须按路径拦。
+     * <p>
+     * 注意：不能写成 startsWith("/_xa/ads")，否则会把同级的 {@code /_xa/ads_batch}
+     * （页面横幅广告批量接口）一起误伤。
+     */
+    static boolean isAdPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        String p = path.toLowerCase(Locale.ROOT);
+        return p.equals("/_xa/ads") || p.startsWith("/_xa/ads/");
+    }
+
     static boolean isSiteHost(String host) {
         return matches(host, SITE_HOSTS);
     }

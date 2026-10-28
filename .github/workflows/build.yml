@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  VERSION_TAG: 'v1.1'
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,28 +44,46 @@ jobs:
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
       - name: Sign APK
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
           echo "build-tools: $BT"
           KS="$RUNNER_TEMP/release.jks"
-          keytool -genkeypair -keystore "$KS" -alias app -keyalg RSA -keysize 2048 \
-            -validity 10000 -storepass android -keypass android \
-            -dname "CN=ClearWeb, O=ClearWeb, C=CN"
+
+          if [ -n "${KS_B64:-}" ]; then
+            echo "使用仓库 Secrets 里的固定密钥签名（可覆盖升级）"
+            printf '%s' "$KS_B64" | base64 -d > "$KS"
+            SP="${KS_PASS:?missing KEYSTORE_PASSWORD}"
+            KP="${KEY_PASS:-$SP}"
+            AL="${KEY_ALIAS:-app}"
+          else
+            echo "::warning::未配置 KEYSTORE_BASE64，本次用临时密钥，覆盖安装会冲突"
+            keytool -genkeypair -keystore "$KS" -alias app -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass android -keypass android \
+              -dname "CN=ClearWeb, O=ClearWeb, C=CN"
+            SP=android; KP=android; AL=app
+          fi
+
           UNSIGNED="$(find app/build/outputs/apk/release -name '*-unsigned.apk' | head -n 1)"
           echo "unsigned: $UNSIGNED"
           "$BT/zipalign" -p -f 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
-          "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android \
-            --out ClearWeb-v1.0.apk "$RUNNER_TEMP/aligned.apk"
-          "$BT/apksigner" verify --print-certs ClearWeb-v1.0.apk
-          sha256sum ClearWeb-v1.0.apk | tee apk-sha256.txt
+          "$BT/apksigner" sign --ks "$KS" --ks-key-alias "$AL" \
+            --ks-pass "pass:$SP" --key-pass "pass:$KP" \
+            --out "ClearWeb-${VERSION_TAG}.apk" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs "ClearWeb-${VERSION_TAG}.apk"
+          sha256sum "ClearWeb-${VERSION_TAG}.apk" | tee apk-sha256.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ClearWeb-apk
           path: |
-            ClearWeb-v1.0.apk
+            ClearWeb-${{ env.VERSION_TAG }}.apk
             apk-sha256.txt
 
       - name: Publish release
@@ -70,10 +91,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v1.0 > /dev/null 2>&1; then
-            gh release upload v1.0 ClearWeb-v1.0.apk apk-sha256.txt --clobber
+          if gh release view "$VERSION_TAG" > /dev/null 2>&1; then
+            gh release upload "$VERSION_TAG" "ClearWeb-${VERSION_TAG}.apk" apk-sha256.txt --clobber
           else
-            gh release create v1.0 ClearWeb-v1.0.apk apk-sha256.txt \
-              --title "ClearWeb v1.0" \
-              --notes "自动构建的 APK，见下方 Assets。"
+            gh release create "$VERSION_TAG" "ClearWeb-${VERSION_TAG}.apk" apk-sha256.txt \
+              --title "ClearWeb ${VERSION_TAG}" \
+              --notes "自动构建。拦截播放器预播广告接口 /_xa/ads；使用固定签名密钥，可直接覆盖升级。"
           fi
